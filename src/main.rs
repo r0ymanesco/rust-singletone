@@ -5,7 +5,7 @@ use std::time;
 use std::io::{self, Write, BufWriter};
 use std::fs::File;
 
-use byteorder::{ WriteBytesExt, LittleEndian};
+use byteorder::{WriteBytesExt, LittleEndian};
 
 use soapysdr;
 use soapysdr::Args;
@@ -43,6 +43,42 @@ fn get_sine_wave(ampl: f32, phase_acc: f32, phase_acc_next: f32, mtu_size: usize
 }
 
 
+fn get_tx_stream(sdr: soapysdr::Device, channel: usize, samp_rate: f32, bandwidth: f64,
+                 antenna: &str, gain: f64, freq: f64, args: Args) -> (TxStream<Complex<f32>>, soapysdr::Device) {
+    sdr.set_sample_rate(Direction::Tx, channel, samp_rate.into()).expect("Cannot set sample rate");
+    println!("Actual Tx rate (Msps): {}", sdr.sample_rate(Direction::Tx, channel).unwrap() / 1e6);
+    sdr.set_bandwidth(Direction::Tx, channel, bandwidth).expect("Cannot set bandwidth");
+    println!("Actual Tx bandwidth (MHz): {}", sdr.bandwidth(Direction::Tx, channel).unwrap() / 1e6);
+    sdr.set_antenna(Direction::Tx, channel, antenna).expect("Cannot set antenna");
+    println!("Actual Tx antenna: {}", sdr.antenna(Direction::Tx, channel).unwrap());
+    sdr.set_gain(Direction::Tx, channel, gain).expect("Cannot set gain");
+    println!("Actual Tx gain (dB): {}", sdr.gain(Direction::Tx, channel).unwrap());
+    sdr.set_frequency(Direction::Tx, channel, freq, args).expect("Cannot set frequency");
+    println!("Actual Tx passband freq (MHz): {}", sdr.frequency(Direction::Tx, channel).unwrap() / 1e6);
+
+    let tx_stream: TxStream<Complex<f32>> = sdr.tx_stream(&[channel]).expect("Fail to initialize Tx");
+    return (tx_stream, sdr);
+}
+
+
+fn get_rx_stream(sdr: soapysdr::Device, channel: usize, samp_rate: f32, bandwidth: f64,
+                 antenna: &str, gain: f64, freq: f64, args: Args) -> (RxStream<Complex<f32>>, soapysdr::Device) {
+    sdr.set_sample_rate(Direction::Rx, channel, samp_rate.into()).expect("Cannot set sample rate");
+    println!("Actual Rx rate (Msps): {}", sdr.sample_rate(Direction::Rx, channel).unwrap() / 1e6);
+    sdr.set_bandwidth(Direction::Rx, channel, bandwidth).expect("Cannot set bandwidth");
+    println!("Actual Rx bandwidth (MHz): {}", sdr.bandwidth(Direction::Rx, channel).unwrap() / 1e6);
+    sdr.set_antenna(Direction::Rx, channel, antenna).expect("Cannot set antenna");
+    println!("Actual Rx antenna: {}", sdr.antenna(Direction::Rx, channel).unwrap());
+    sdr.set_gain(Direction::Rx, channel, gain).expect("Cannot set gain");
+    println!("Actual Rx gain (dB): {}", sdr.gain(Direction::Rx, channel).unwrap());
+    sdr.set_frequency(Direction::Rx, channel, freq, args).expect("Cannot set frequency");
+    println!("Actual Rx passband freq (MHz): {}", sdr.frequency(Direction::Rx, channel).unwrap() / 1e6);
+
+    let rx_stream: RxStream<Complex<f32>> = sdr.rx_stream(&[channel]).expect("Fail to initialize Tx");
+    return (rx_stream, sdr);
+}
+
+
 fn main() {
 
     let mut devices = soapysdr::enumerate("").unwrap();
@@ -75,35 +111,15 @@ fn main() {
 
     // TODO factorise param setting
     let sdr = soapysdr::Device::new(dev_args).unwrap();
-
-    sdr.set_sample_rate(Direction::Tx, tx_channel, samp_rate.into()).expect("Cannot set sample rate");
-    println!("Actual Tx rate (Msps): {}", sdr.sample_rate(Direction::Tx, tx_channel).unwrap() / 1e6);
-    sdr.set_bandwidth(Direction::Tx, tx_channel, bandwidth).expect("Cannot set bandwidth");
-    println!("Actual Tx bandwidth (MHz): {}", sdr.bandwidth(Direction::Tx, tx_channel).unwrap() / 1e6);
-    sdr.set_antenna(Direction::Tx, tx_channel, tx_antenna).expect("Cannot set antenna");
-    println!("Actual Tx antenna: {}", sdr.antenna(Direction::Tx, tx_channel).unwrap());
-    sdr.set_gain(Direction::Tx, tx_channel, tx_gain).expect("Cannot set gain");
-    println!("Actual Tx gain (dB): {}", sdr.gain(Direction::Tx, tx_channel).unwrap());
-    sdr.set_frequency(Direction::Tx, tx_channel, freq, tx_args).expect("Cannot set frequency");
-    println!("Actual Tx passband freq (MHz): {}", sdr.frequency(Direction::Tx, tx_channel).unwrap() / 1e6);
-
-    let mut tx_stream: TxStream<Complex<f32>> = sdr.tx_stream(&[tx_channel]).expect("Fail to initialize Tx");
+    // FIXME should be able to pass sdr by reference
+    let (mut tx_stream, sdr) = get_tx_stream(sdr, tx_channel, samp_rate, bandwidth,
+                                             tx_antenna, tx_gain, freq, tx_args);
     let tx_mtu: usize = tx_stream.mtu().expect("Fail to read Tx MTU");
     let tx_mtu_float: f32 = FromPrimitive::from_usize(tx_mtu).unwrap();
     println!("Tx MTU: {} elements", tx_mtu);
 
-    sdr.set_sample_rate(Direction::Rx, rx_channel, samp_rate.into()).expect("Cannot set sample rate");
-    println!("Actual Rx rate (Msps): {}", sdr.sample_rate(Direction::Rx, rx_channel).unwrap() / 1e6);
-    sdr.set_bandwidth(Direction::Rx, rx_channel, bandwidth).expect("Cannot set bandwidth");
-    println!("Actual Rx bandwidth (MHz): {}", sdr.bandwidth(Direction::Rx, rx_channel).unwrap() / 1e6);
-    sdr.set_antenna(Direction::Rx, rx_channel, rx_antenna).expect("Cannot set antenna");
-    println!("Actual Rx antenna: {}", sdr.antenna(Direction::Rx, rx_channel).unwrap());
-    sdr.set_gain(Direction::Rx, rx_channel, rx_gain).expect("Cannot set gain");
-    println!("Actual Rx gain (dB): {}", sdr.gain(Direction::Rx, rx_channel).unwrap());
-    sdr.set_frequency(Direction::Rx, rx_channel, freq, rx_args).expect("Cannot set frequency");
-    println!("Actual Rx passband freq (MHz): {}", sdr.frequency(Direction::Rx, rx_channel).unwrap() / 1e6);
-
-    let mut rx_stream: RxStream<Complex<f32>> = sdr.rx_stream(&[rx_channel]).expect("Fail to initialize Tx");
+    let (mut rx_stream, sdr) = get_rx_stream(sdr, rx_channel, samp_rate, bandwidth,
+                                             rx_antenna, rx_gain, freq, rx_args);
     let rx_mtu: usize = rx_stream.mtu().expect("Fail to read Rx MTU");
     let rx_mtu_float: f32 = FromPrimitive::from_usize(rx_mtu).unwrap();
     println!("Rx MTU: {} elements", rx_mtu);
@@ -111,12 +127,10 @@ fn main() {
     println!("Letting things settle");
     thread::sleep(time::Duration::from_secs(1));
 
-    tx_stream.activate(None).expect("Fail to activate Tx stream");
-
     let pi: f32 = FloatConst::PI();
     let mut phase_acc: f32 = 0.;
     let signal_ampl: f32 = 0.7;
-    let wave_freq = samp_rate / 20.0;
+    let wave_freq = samp_rate / 10.0;
     let phase_inc: f32 = 2. * pi * wave_freq / samp_rate;  // how much the phase increases per sample
     let mut phase_acc_next = phase_acc + tx_mtu_float * phase_inc;
 
@@ -124,6 +138,8 @@ fn main() {
     let sdr_time: i64 = sdr.get_hardware_time(None).expect("Unable to get hardware time");
     let mut tx_start_time: Option<i64> = Some(sdr_time + (1e8 as i64));  // 100ms in nanosec notation
     let rx_start_time: Option<i64> = Some(sdr_time + (1e8 as i64) - ((rx_mtu_float / samp_rate) as i64) * (5e8 as i64));
+
+    tx_stream.activate(None).expect("Fail to activate Tx stream");
     rx_stream.activate(rx_start_time).expect("Fail to activate Rx stream");
 
     let mut counter: u64 = 0;
@@ -139,7 +155,7 @@ fn main() {
         let mut rx_buffer = vec![Complex::new(0., 0.); rx_mtu];
         let read_len = rx_stream.read(&[&mut rx_buffer], 100000).expect("Rx read failed");
         // assert_eq!(read_len, rx_mtu);
-        let file_name= format!("rx_samples_{counter}.cfile");
+        let file_name= format!("samples/rx_samples_{counter}.cfile");
         let mut outfile = BufWriter::new(File::create(file_name).expect("error opening output file"));
         write_cfile(&rx_buffer[..read_len], &mut outfile).unwrap();
 
@@ -151,16 +167,4 @@ fn main() {
 
     tx_stream.deactivate(None).expect("Fail to deactivate Tx stream");
     rx_stream.deactivate(None).expect("Fail to deactivate Rx stream");
-
-    // let dev_args = sdr.frequency_args_info(Direction::Tx, tx_channel).unwrap();
-    // for d_args in &dev_args {
-    //     println!("{}:{}", d_args.key, d_args.value);
-    // }
-    // println!("{:?}", sdr.frequency_range(Direction::Tx, 0).unwrap());
-    // println!("driver key: {}", sdr.driver_key().unwrap());
-    // println!("n channels: {}", sdr.num_channels(Direction::Tx).unwrap());
-    // println!("channel info: {}", sdr.channel_info(Direction::Tx, 0).unwrap());
-    // println!("hardware_info: {}", sdr.hardware_info().unwrap());
-    // println!("full duplex: {}", sdr.full_duplex(Direction::Tx, 1).unwrap());
-    // println!("antennas: {:?}", sdr.antennas(Direction::Tx, 1).unwrap());
 }
